@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Deployment Control Center</title>
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --panel: #111114;
+    --panel-2: #17171b;
+    --border: #232327;
+    --text: #e6e6e9;
+    --muted: #7a7a83;
+    --green: #3ecf8e;
+    --amber: #e0a940;
+    --red: #e05252;
+    --blue: #5b8def;
+    --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    padding: 32px 20px 60px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  header .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; }
+  header h1 { margin: 6px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .conn-indicator { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .conn-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .conn-dot.off { background: var(--red); }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 22px 24px; margin-bottom: 18px; }
+  .panel-title { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .row + .row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .label { color: var(--muted); font-size: 13px; }
+  .value { font-size: 14px; font-weight: 600; }
+
+  .status-pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; letter-spacing: 0.03em; border: 1px solid var(--border); }
+  .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-idle { background: var(--muted); }
+  .dot-canary { background: var(--blue); }
+  .dot-warning { background: var(--amber); animation: pulse 1s infinite; }
+  .dot-fail { background: var(--red); }
+  .dot-ok { background: var(--green); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .traffic-bar { display: flex; width: 100%; height: 10px; border-radius: 5px; overflow: hidden; background: var(--border); margin-top: 8px; }
+  .traffic-bar .stable { background: var(--blue); transition: width 0.4s ease; }
+  .traffic-bar .canary { background: var(--green); transition: width 0.4s ease, background 0.3s ease; }
+  .traffic-bar.warning .canary { background: var(--amber); }
+  .traffic-bar.failing .canary { background: var(--red); }
+
+  .breach-meter { display: flex; gap: 4px; margin-top: 8px; }
+  .breach-seg { flex: 1; height: 6px; border-radius: 3px; background: var(--border); transition: background 0.25s ease; }
+  .breach-seg.filled { background: var(--red); }
+
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .metric-box { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
+  .metric-box .m-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .metric-box .m-value { font-size: 24px; font-weight: 700; }
+  .metric-box .m-threshold { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .over { color: var(--red) !important; }
+  canvas.sparkline { width: 100%; height: 40px; display: block; margin-top: 10px; }
+
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; align-items: center; }
+  button { font-family: var(--mono); background: transparent; color: var(--text); border: 1px solid var(--border); padding: 10px 18px; border-radius: 5px; font-size: 13px; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  button:hover:not(:disabled) { border-color: var(--muted); background: #18181c; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { border-color: var(--blue); color: var(--blue); }
+  button.danger { border-color: var(--red); color: var(--red); }
+  button.ghost { color: var(--muted); }
+  select {
+    font-family: var(--mono); background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px; padding: 9px 10px; font-size: 13px;
+  }
+
+  .log-panel { max-height: 220px; overflow-y: auto; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
+  .log-panel .entry { color: var(--text); }
+  .log-panel .entry.alert { color: var(--red); }
+  .log-panel .entry.warn { color: var(--amber); }
+  .log-panel .entry.success { color: var(--green); }
+
+  .rollback-banner { display: none; border: 1px solid var(--red); background: rgba(224, 82, 82, 0.08); color: var(--red); padding: 14px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; margin-bottom: 18px; letter-spacing: 0.02em; }
+  .rollback-banner.show { display: block; }
+  .warning-banner { display: none; border: 1px solid var(--amber); background: rgba(224, 169, 64, 0.08); color: var(--amber); padding: 14px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; margin-bottom: 18px; letter-spacing: 0.02em; }
+  .warning-banner.show { display: block; }
+
+  .config-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .config-item { display: flex; flex-direction: column; gap: 6px; }
+  .config-item .config-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .config-item .config-label b { color: var(--text); font-weight: 600; }
+  input[type="range"] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--blue); cursor: pointer; }
+  input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--blue); border: none; cursor: pointer; }
+  .config-hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 2px; }
+  .port-link { color: var(--blue); text-decoration: none; border-bottom: 1px dashed var(--blue); }
+  .port-link:hover { border-bottom-style: solid; }
+
+  footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Automated Rollback &amp; Canary Deployment Pipeline</div>
+      <h1>Deployment Control Center</h1>
+    </div>
+    <div class="conn-indicator"><span class="conn-dot" id="connDot"></span><span id="connText">connecting…</span></div>
+  </header>
+
+  <div id="warningBanner" class="warning-banner">⚠️ Health check breach detected — confirming before rollback (<span id="breachCount">0</span>/<span id="debounceCount">2</span>)…</div>
+  <div id="rollbackBanner" class="rollback-banner">🚨 CANARY FAILURE CONFIRMED — rolling back to last stable version…</div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="label">Deployment Status</div>
+      <div id="statusPill" class="status-pill"><span class="dot dot-idle"></span><span id="statusText">IDLE</span></div>
+    </div>
+    <div class="row"><div class="label">Stable Version</div><div class="value" id="stableVersion">V1</div></div>
+    <div class="row"><div class="label">Canary Version</div><div class="value" id="canaryVersion">—</div></div>
+    <div class="row" style="flex-direction: column; align-items: stretch;">
+      <div class="row" style="border: none; padding: 0; margin: 0;">
+        <div class="label">Traffic Split</div>
+        <div class="value"><span id="stableTraffic">100</span>% stable / <span id="canaryTraffic">0</span>% canary</div>
+      </div>
+      <div id="trafficBar" class="traffic-bar"><div class="stable" style="width: 100%;"></div><div class="canary" style="width: 0%;"></div></div>
+    </div>
+    <div class="row" style="flex-direction: column; align-items: stretch;">
+      <div class="row" style="border: none; padding: 0; margin: 0;">
+        <div class="label">Breach confirmation window (debounce)</div>
+        <div class="value"><span id="breachN">0</span> / <span id="debounceN">2</span> consecutive ticks</div>
+      </div>
+      <div class="breach-meter" id="breachMeter"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="metrics">
+      <div class="metric-box">
+        <div class="m-label"><span>Error Rate</span><span>threshold <span id="errThreshold">5.0</span>%</span></div>
+        <div class="m-value" id="errorRate">2.0%</div>
+        <canvas class="sparkline" id="errChart"></canvas>
+      </div>
+      <div class="metric-box">
+        <div class="m-label"><span>Response Time</span><span>threshold <span id="latThreshold">400</span>ms</span></div>
+        <div class="m-value" id="responseTime">160 ms</div>
+        <canvas class="sparkline" id="latChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Deployment Actions</div>
+    <div class="actions">
+      <button class="primary" id="btnDeploy">Deploy New Version</button>
+      <select id="severitySelect">
+        <option value="mild">Mild failure</option>
+        <option value="moderate" selected>Moderate failure</option>
+        <option value="severe">Severe failure</option>
+      </select>
+      <button class="danger" id="btnFailErrors">Simulate Error Spike</button>
+      <button class="danger" id="btnFailLatency">Simulate Latency Spike</button>
+      <button class="ghost" id="btnReset">Reset</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Rollback Engine Configuration (live-tunable)</div>
+    <div class="config-grid">
+      <div class="config-item">
+        <div class="config-label"><span>Error rate threshold</span><b id="errSliderVal">5.0%</b></div>
+        <input type="range" id="errSlider" min="1" max="20" step="0.5" value="5">
+      </div>
+      <div class="config-item">
+        <div class="config-label"><span>Response time threshold</span><b id="latSliderVal">400 ms</b></div>
+        <input type="range" id="latSlider" min="150" max="1000" step="10" value="400">
+      </div>
+      <div class="config-item">
+        <div class="config-label"><span>Debounce window (consecutive breaches to confirm)</span><b id="debounceSliderVal">2 ticks</b></div>
+        <input type="range" id="debounceSlider" min="1" max="5" step="1" value="2">
+        <div class="config-hint">1 tick = react instantly, more false positives from noise. Higher = fewer false positives, slower to confirm real failures.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Live Real System — verify it yourself</div>
+    <div class="row">
+      <div class="label">Stable service (real, independently running)</div>
+      <div class="value"><a id="stablePortLink" class="port-link" href="#" target="_blank">localhost:9101</a></div>
+    </div>
+    <div class="row" id="canaryPortRow" style="display:none;">
+      <div class="label">Canary service (real, independently running)</div>
+      <div class="value"><a id="canaryPortLink" class="port-link" href="#" target="_blank">localhost:9102</a></div>
+    </div>
+    <div class="row">
+      <div class="label">Total real requests routed</div>
+      <div class="value"><span id="totalRequests">0</span> total · <span id="canaryRequests">0</span> to canary</div>
+    </div>
+    <div class="config-hint" style="margin-top: 10px;">
+      Click a link above to open that service's real /work endpoint directly in a new tab —
+      it's a genuinely separate live process, not a mock. Refresh it while a fault is
+      injected and you'll see real 500s.
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Live Request Log (real traffic, newest first)</div>
+    <div class="log-panel" id="requestLogPanel"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Event Log</div>
+    <div class="log-panel" id="logPanel"></div>
+  </div>
+
+  <footer>Deployment Engine · Canary Controller · Monitoring Engine · Rollback Engine (debounced)</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const statusPill = $('statusPill');
+  const statusDot = statusPill.querySelector('.dot');
+  const statusText = $('statusText');
+  const stableVersion = $('stableVersion');
+  const canaryVersion = $('canaryVersion');
+  const stableTraffic = $('stableTraffic');
+  const canaryTraffic = $('canaryTraffic');
+  const trafficBar = $('trafficBar');
+  const trafficStable = trafficBar.querySelector('.stable');
+  const trafficCanary = trafficBar.querySelector('.canary');
+  const errorRate = $('errorRate');
+  const responseTime = $('responseTime');
+  const errThreshold = $('errThreshold');
+  const latThreshold = $('latThreshold');
+  const breachN = $('breachN');
+  const debounceN = $('debounceN');
+  const breachMeter = $('breachMeter');
+  const breachCount = $('breachCount');
+  const debounceCount = $('debounceCount');
+  const logPanel = $('logPanel');
+  const rollbackBanner = $('rollbackBanner');
+  const warningBanner = $('warningBanner');
+  const btnDeploy = $('btnDeploy');
+  const btnFailErrors = $('btnFailErrors');
+  const btnFailLatency = $('btnFailLatency');
+  const btnReset = $('btnReset');
+  const severitySelect = $('severitySelect');
+  const connDot = $('connDot');
+  const connText = $('connText');
+  const stablePortLink = $('stablePortLink');
+  const canaryPortLink = $('canaryPortLink');
+  const canaryPortRow = $('canaryPortRow');
+  const totalRequests = $('totalRequests');
+  const canaryRequests = $('canaryRequests');
+  const requestLogPanel = $('requestLogPanel');
+
+  const errSlider = $('errSlider'), errSliderVal = $('errSliderVal');
+  const latSlider = $('latSlider'), latSliderVal = $('latSliderVal');
+  const debounceSlider = $('debounceSlider'), debounceSliderVal = $('debounceSliderVal');
+
+  const STATUS_META = {
+    IDLE:         { cls: 'dot-idle',    label: 'IDLE' },
+    CANARY:       { cls: 'dot-canary',  label: 'CANARY IN PROGRESS' },
+    WARNING:      { cls: 'dot-warning', label: 'BREACH — CONFIRMING' },
+    ROLLING_BACK: { cls: 'dot-fail',    label: 'ROLLING BACK' },
+    ROLLED_BACK:  { cls: 'dot-fail',    label: 'ROLLED BACK' },
+    PROMOTED:     { cls: 'dot-ok',      label: 'PROMOTED' },
+  };
+
+  function drawSparkline(canvas, data, threshold) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = canvas.clientWidth * 2;
+    const h = canvas.height = canvas.clientHeight * 2;
+    ctx.clearRect(0, 0, w, h);
+    if (!data || data.length < 2) return;
+
+    const maxVal = Math.max(threshold * 1.15, ...data) || 1;
+    const minVal = 0;
+    const x = i => (i / (data.length - 1)) * w;
+    const y = v => h - ((v - minVal) / (maxVal - minVal)) * h;
+
+    // threshold line
+    ctx.strokeStyle = 'rgba(224,82,82,0.35)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, y(threshold));
+    ctx.lineTo(w, y(threshold));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // data line
+    ctx.strokeStyle = '#5b8def';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    data.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
+    ctx.stroke();
+
+    // last point
+    const lastColor = data[data.length - 1] > threshold ? '#e05252' : '#3ecf8e';
+    ctx.fillStyle = lastColor;
+    ctx.beginPath();
+    ctx.arc(x(data.length - 1), y(data[data.length - 1]), 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function render(s) {
+    const meta = STATUS_META[s.status] || STATUS_META.IDLE;
+    statusDot.className = 'dot ' + meta.cls;
+    statusText.textContent = meta.label;
+
+    stableVersion.textContent = s.stable_version;
+    canaryVersion.textContent = s.canary_version || '—';
+    stableTraffic.textContent = s.stable_traffic;
+    canaryTraffic.textContent = s.canary_traffic;
+    trafficStable.style.width = s.stable_traffic + '%';
+    trafficCanary.style.width = s.canary_traffic + '%';
+    trafficBar.classList.toggle('warning', s.status === 'WARNING');
+    trafficBar.classList.toggle('failing', s.status === 'ROLLING_BACK');
+
+    errorRate.textContent = s.error_rate + '%';
+    errorRate.className = 'm-value ' + (s.error_rate > s.config.error_threshold ? 'over' : '');
+    responseTime.textContent = Math.round(s.response_time) + ' ms';
+    responseTime.className = 'm-value ' + (s.response_time > s.config.latency_threshold ? 'over' : '');
+    errThreshold.textContent = s.config.error_threshold.toFixed(1);
+    latThreshold.textContent = s.config.latency_threshold;
+
+    const db = s.config.debounce_ticks;
+    breachN.textContent = s.consecutive_breaches;
+    debounceN.textContent = db;
+    breachCount.textContent = s.consecutive_breaches;
+    debounceCount.textContent = db;
+    breachMeter.innerHTML = '';
+    for (let i = 0; i < db; i++) {
+      const seg = document.createElement('div');
+      seg.className = 'breach-seg' + (i < s.consecutive_breaches ? ' filled' : '');
+      breachMeter.appendChild(seg);
+    }
+
+    rollbackBanner.classList.toggle('show', s.status === 'ROLLING_BACK');
+    warningBanner.classList.toggle('show', s.status === 'WARNING');
+
+    drawSparkline($('errChart'), s.error_history, s.config.error_threshold);
+    drawSparkline($('latChart'), s.latency_history, s.config.latency_threshold);
+
+    logPanel.innerHTML = s.logs.map(l => {
+      let cls = 'entry';
+      if (l.includes('CONFIRMED') || l.includes('FAILURE')) cls += ' alert';
+      else if (l.includes('breach') || l.includes('Watching')) cls += ' warn';
+      else if (l.includes('promoted') || l.includes('restored') || l.includes('recovered')) cls += ' success';
+      return `<div class="${cls}">${l}</div>`;
+    }).join('');
+    logPanel.scrollTop = logPanel.scrollHeight;
+
+    const active = (s.status === 'CANARY' || s.status === 'WARNING');
+    btnDeploy.disabled = active || s.status === 'ROLLING_BACK';
+    const canFail = active && !s.failure_mode;
+    btnFailErrors.disabled = !canFail;
+    btnFailLatency.disabled = !canFail;
+
+    stablePortLink.textContent = 'localhost:' + s.stable_port;
+    stablePortLink.href = 'http://localhost:' + s.stable_port + '/work';
+    if (s.canary_port) {
+      canaryPortLink.textContent = 'localhost:' + s.canary_port;
+      canaryPortLink.href = 'http://localhost:' + s.canary_port + '/work';
+      canaryPortRow.style.display = '';
+    } else {
+      canaryPortRow.style.display = 'none';
+    }
+    totalRequests.textContent = s.total_requests;
+    canaryRequests.textContent = s.canary_requests;
+
+    requestLogPanel.innerHTML = s.request_log.slice().reverse().map(r => {
+      const statusCls = r.ok ? 'success' : 'alert';
+      const statusTxt = r.ok ? '200' : '500';
+      return `<div class="entry ${statusCls}">[${r.ts}] ${r.version} :${r.port} → ${statusTxt} · ${r.latency}ms</div>`;
+    }).join('');
+
+    // keep config sliders in sync with server state (in case another tab changed them)
+    if (document.activeElement !== errSlider) {
+      errSlider.value = s.config.error_threshold;
+      errSliderVal.textContent = s.config.error_threshold.toFixed(1) + '%';
+    }
+    if (document.activeElement !== latSlider) {
+      latSlider.value = s.config.latency_threshold;
+      latSliderVal.textContent = s.config.latency_threshold + ' ms';
+    }
+    if (document.activeElement !== debounceSlider) {
+      debounceSlider.value = s.config.debounce_ticks;
+      debounceSliderVal.textContent = s.config.debounce_ticks + ' ticks';
+    }
+  }
+
+  let ws;
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.onopen = () => { connDot.classList.remove('off'); connText.textContent = 'live'; };
+    ws.onmessage = (evt) => render(JSON.parse(evt.data));
+    ws.onclose = () => {
+      connDot.classList.add('off'); connText.textContent = 'reconnecting…';
+      setTimeout(connect, 1500);
+    };
+  }
+  connect();
+
+  btnDeploy.addEventListener('click', () => fetch('/deploy', { method: 'POST' }));
+  btnFailErrors.addEventListener('click', () =>
+    fetch(`/simulate-failure?mode=errors&severity=${severitySelect.value}`, { method: 'POST' }));
+  btnFailLatency.addEventListener('click', () =>
+    fetch(`/simulate-failure?mode=latency&severity=${severitySelect.value}`, { method: 'POST' }));
+  btnReset.addEventListener('click', () => fetch('/reset', { method: 'POST' }));
+
+  function pushConfig() {
+    fetch('/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error_threshold: parseFloat(errSlider.value),
+        latency_threshold: parseFloat(latSlider.value),
+        debounce_ticks: parseInt(debounceSlider.value, 10),
+      }),
+    });
+  }
+  errSlider.addEventListener('input', () => errSliderVal.textContent = parseFloat(errSlider.value).toFixed(1) + '%');
+  latSlider.addEventListener('input', () => latSliderVal.textContent = latSlider.value + ' ms');
+  debounceSlider.addEventListener('input', () => debounceSliderVal.textContent = debounceSlider.value + ' ticks');
+  errSlider.addEventListener('change', pushConfig);
+  latSlider.addEventListener('change', pushConfig);
+  debounceSlider.addEventListener('change', pushConfig);
+</script>
+</body>
+</html>
